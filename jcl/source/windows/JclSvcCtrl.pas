@@ -526,7 +526,7 @@ begin
         ReallocMem(PBuf, BytesNeeded);
         ServicesReturned := 0;
         Ret := EnumDependentServices(FHandle, SERVICE_STATE_ALL,
-          PEnumServiceStatus(PBuf){$IFNDEF FPC}{$IFNDEF RTL340_UP}^{$ENDIF}{$ENDIF}, BytesNeeded, BytesNeeded, ServicesReturned);
+          PEnumServiceStatus(PBuf){$IFNDEF FPC}{$IFNDEF RTL240_UP}^{$ENDIF}{$ENDIF}, BytesNeeded, BytesNeeded, ServicesReturned);
       until Ret or (GetLastError <> ERROR_INSUFFICIENT_BUFFER);
       Win32Check(Ret);
 
@@ -1087,7 +1087,7 @@ procedure TJclSCManager.Refresh(const RefreshAll: Boolean);
         ReallocMem(PBuf, BytesNeeded);
         ServicesReturned := 0;
         Ret := EnumServicesStatus(FHandle, SERVICE_WIN32 or SERVICE_ADAPTER or SERVICE_DRIVER or SERVICE_INTERACTIVE_PROCESS, SERVICE_STATE_ALL,
-          PEnumServiceStatus(PBuf){$IFNDEF FPC}{$IFNDEF RTL340_UP}^{$ENDIF}{$ENDIF},
+          PEnumServiceStatus(PBuf){$IFNDEF FPC}{$IFNDEF RTL240_UP}^{$ENDIF}{$ENDIF},
           BytesNeeded, BytesNeeded, ServicesReturned, ResumeHandle);
         LastError := GetLastError;
 
