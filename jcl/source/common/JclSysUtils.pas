@@ -496,6 +496,7 @@ function IntToStrZeroPad(Value, Count: Integer): string;
 // Child processes
 type
   // e.g. TStrings.Append
+  PTHandle = ^THandle;
   TTextHandler = procedure(const Text: string) of object;
   TJclProcessPriority = (ppIdle, ppNormal, ppHigh, ppRealTime, ppBelowNormal, ppAboveNormal);
 
@@ -507,7 +508,7 @@ function Execute(const CommandLine: string; OutputLineCallback: TTextHandler; Ra
   AutoConvertOem: Boolean = False): Cardinal; overload;
 function Execute(const CommandLine: string; AbortEvent: TJclEvent;
   OutputLineCallback: TTextHandler; RawOutput: Boolean = False; ProcessPriority: TJclProcessPriority = ppNormal;
-  AutoConvertOem: Boolean = False): Cardinal; overload;
+  AutoConvertOem: Boolean = False; StdInPipeHandle: PTHandle = NIL): Cardinal; overload;
 function Execute(const CommandLine: string; var Output: string; RawOutput: Boolean = False;
   AbortPtr: PBoolean = nil; ProcessPriority: TJclProcessPriority = ppNormal;
   AutoConvertOem: Boolean = False): Cardinal; overload;
@@ -557,6 +558,7 @@ type
     FExitCode: Cardinal;
     FOutput: string;
     FError: string;
+    FStdInPipeWrite: PTHandle;
   public
     // in:
     property CommandLine: string read FCommandLine write FCommandLine;
@@ -3006,7 +3008,7 @@ end;
 
 function ExecuteCmdProcess(Options: TJclExecuteCmdProcessOptions): Boolean;
 var
-  OutPipeInfo, ErrorPipeInfo: TPipeInfo;
+  OutPipeInfo, ErrorPipeInfo, InPipeInfo: TPipeInfo;
   Index: Cardinal;
 {$IFDEF MSWINDOWS}
 const
@@ -3042,6 +3044,19 @@ begin
     Options.FExitCode := GetLastError;
     Exit;
   end;
+
+  ResetMemory(InPipeInfo, SizeOf(InPipeInfo));
+  InPipeInfo.TextHandler := NIL;
+  InPipeInfo.RawOutput := True;
+  if (Assigned(Options.FStdInPipeWrite)) then
+  begin
+    if not CreateAsyncPipe(InPipeInfo.PipeRead, InPipeInfo.PipeWrite, @SecurityAttr, 0) then
+    begin
+      Options.FExitCode := GetLastError;
+      Exit;
+    end;
+  end;
+
   OutPipeInfo.Event := TJclEvent.Create(@SecurityAttr, False {automatic reset}, False {not flagged}, '' {anonymous});
   ResetMemory(ErrorPipeInfo, SizeOf(ErrorPipeInfo));
   if not Options.MergeError then
@@ -3068,7 +3083,10 @@ begin
     StartupInfo.dwFlags := StartupInfo.dwFlags or STARTF_USESHOWWINDOW;
     StartupInfo.wShowWindow := StartupVisibilityFlags[Options.StartupVisibility];
   end;
-  StartupInfo.hStdInput := GetStdHandle(STD_INPUT_HANDLE);
+  if (Assigned(Options.FStdInPipeWrite)) then
+    StartupInfo.hStdInput := InPipeInfo.PipeRead
+  else
+    StartupInfo.hStdInput := GetStdHandle(STD_INPUT_HANDLE);
   StartupInfo.hStdOutput := OutPipeInfo.PipeWrite;
   if Options.MergeError then
     StartupInfo.hStdError := OutPipeInfo.PipeWrite
@@ -3078,6 +3096,10 @@ begin
   UniqueString(CommandLine); // CommandLine must be in a writable memory block
   ResetMemory(ProcessInfo, SizeOf(ProcessInfo));
   ProcessEvent := nil;
+
+  if (Assigned(Options.FStdInPipeWrite)) then
+    Options.FStdInPipeWrite^ := InPipeInfo.PipeWrite;
+
   try
     Flags := Options.CreateProcessFlags and not (NORMAL_PRIORITY_CLASS or IDLE_PRIORITY_CLASS or
                                                  HIGH_PRIORITY_CLASS or REALTIME_PRIORITY_CLASS);
@@ -3208,6 +3230,10 @@ begin
   finally
     LastError := GetLastError;
     try
+      if InPipeInfo.PipeRead <> 0 then
+        CloseHandle(InPipeInfo.PipeRead);
+      if InPipeInfo.PipeWrite <> 0 then
+        CloseHandle(InPipeInfo.PipeWrite);
       if OutPipeInfo.PipeRead <> 0 then
         CloseHandle(OutPipeInfo.PipeRead);
       if OutPipeInfo.PipeWrite <> 0 then
@@ -3280,7 +3306,8 @@ end;
 function InternalExecute(CommandLine: string; AbortPtr: PBoolean; AbortEvent: TJclEvent;
   var Output: string; OutputLineCallback: TTextHandler; RawOutput: Boolean;
   MergeError: Boolean; var Error: string; ErrorLineCallback: TTextHandler; RawError: Boolean;
-  ProcessPriority: TJclProcessPriority; AutoConvertOem: Boolean): Cardinal;
+  ProcessPriority: TJclProcessPriority; AutoConvertOem: Boolean;
+  StdInHandle: PTHandle = NIL): Cardinal;
 var
   Options: TJclExecuteCmdProcessOptions;
 begin
@@ -3296,6 +3323,7 @@ begin
     Options.ErrorLineCallback := ErrorLineCallback;
     Options.RawError := RawError;
     Options.ProcessPriority := ProcessPriority;
+    Options.FStdInPipeWrite := StdInHandle;
 
     ExecuteCmdProcess(Options);
 
@@ -3349,14 +3377,14 @@ begin
 end;
 
 function Execute(const CommandLine: string; AbortEvent: TJclEvent; OutputLineCallback: TTextHandler; RawOutput: Boolean;
-  ProcessPriority: TJclProcessPriority; AutoConvertOem: Boolean): Cardinal;
+  ProcessPriority: TJclProcessPriority; AutoConvertOem: Boolean; StdInPipeHandle: PTHandle): Cardinal;
 var
   Output, Error: string;
 begin
   Output := '';
   Error := '';
   Result := InternalExecute(CommandLine, nil, AbortEvent, Output, OutputLineCallback, RawOutput, True, Error,
-    nil, False, ProcessPriority, AutoConvertOem);
+    nil, False, ProcessPriority, AutoConvertOem, StdInPipeHandle);
 end;
 
 { TODO -cHelp :
