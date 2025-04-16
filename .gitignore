@@ -38,6 +38,7 @@ jcl/lib/*/win*/debug/*.res
 jcl/bin/*
 jcl/install/dcc32_command.cmd
 jcl/install/dcc32.cfg
+jcl/packages/d28/Jcl.used
 
 # Auto generated compiler version include files
 jcl/source/include/jcld*.inc
